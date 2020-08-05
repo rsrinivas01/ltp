@@ -79,7 +79,7 @@ int main(int ac, char **av)
 
 	fail = 0;
 
-#ifdef LINUX_FILE_REGION_LOCK
+//#ifdef LINUX_FILE_REGION_LOCK
 	if (fcntl(fd, F_RGETLK, &tl) == -1) {
 		if (errno == EINVAL)
 			tst_brkm(TCONF, cleanup,
@@ -105,9 +105,9 @@ int main(int ac, char **av)
 		tst_resm(TFAIL | TERRNO, "F_RSETLK UNLOCK failed");
 
 	unlock_file();
-#else
-	tst_resm(TCONF, "system doesn't have LINUX_LOCK_FILE_REGION support");
-#endif
+//#else
+//	tst_resm(TCONF, "system doesn't have LINUX_LOCK_FILE_REGION support");
+//#endif
 
 	cleanup();
 	tst_exit();
