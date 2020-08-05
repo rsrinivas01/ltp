@@ -80,6 +80,8 @@ int main(int ac, char **av)
 	fail = 0;
 
 //#ifdef LINUX_FILE_REGION_LOCK
+        struct flock tl;
+
 	if (fcntl(fd, F_RGETLK, &tl) == -1) {
 		if (errno == EINVAL)
 			tst_brkm(TCONF, cleanup,
