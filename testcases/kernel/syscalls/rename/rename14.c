@@ -65,6 +65,7 @@ void dochild2(void);
 
 int main(int argc, char *argv[])
 {
+	int fd;
 	int pid;
 	sigset_t set;
 	struct sigaction act, oact;
@@ -88,7 +89,9 @@ int main(int argc, char *argv[])
 	}
 	parent_pid = getpid();
 	tst_tmpdir();
-
+	dochild1();
+	dochild2();
+#if 0
 	pid = FORK_OR_VFORK();
 	if (pid < 0)
 		tst_brkm(TBROK, NULL, "fork() returned %d", pid);
@@ -123,7 +126,7 @@ int main(int argc, char *argv[])
 	unlink("./rename14xyz");
 	(local_flag == PASSED) ? tst_resm(TPASS, "Test Passed")
 	    : tst_resm(TFAIL, "Test Failed");
-
+#endif 
 	tst_rmdir();
 	tst_exit();
 }
@@ -150,17 +153,17 @@ int al(void)
 
 void dochild1(void)
 {
-	int fd;
+//	int fd;
 
-	for (;;) {
+	//for (;;) {
 		fd = creat("./rename14", 0666);
 		unlink("./rename14");
 		close(fd);
-	}
+	//}
 }
 
 void dochild2(void)
 {
-	for (;;)
+//	for (;;)
 		rename("./rename14", "./rename14xyz");
 }
