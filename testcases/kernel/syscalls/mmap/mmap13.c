@@ -49,7 +49,7 @@ int TST_TOTAL = 1;
 static size_t page_sz;
 static char *addr;
 static int fildes;
-static volatile sig_atomic_t pass;
+static volatile sig_atomic_t pass = 0;
 static sigjmp_buf env;
 
 static void setup(void);
@@ -78,8 +78,10 @@ int main(int argc, char *argv[])
 		}
 
 		if (sigsetjmp(env, 1) == 0) {
+			tst_resm(TINFO, "sigsetjmp returned 0");
 			ch = addr + page_sz + 1;
 			*ch = 0;
+			tst_resm(TINFO, "after *ch=0");
 		}
 
 		if (pass)
@@ -127,6 +129,8 @@ static void setup(void)
  */
 static void sig_handler(int sig)
 {
+	tst_resm(TINFO, "Signalhandler sig = %d", sig);
+
 	if (sig == SIGBUS) {
 		pass = 1;
 		siglongjmp(env, 1);
