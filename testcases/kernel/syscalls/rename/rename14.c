@@ -62,10 +62,10 @@ int term(void);
 int al(void);
 void dochild1(void);
 void dochild2(void);
+int fd;
 
 int main(int argc, char *argv[])
 {
-	int fd;
 	int pid;
 	sigset_t set;
 	struct sigaction act, oact;
