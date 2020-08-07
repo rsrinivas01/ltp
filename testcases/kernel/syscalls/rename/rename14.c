@@ -42,13 +42,14 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #include "test.h"
 
 #define FAILED 0
 #define PASSED 1
 
-int local_flag = PASSED;
+int local_flag = -1;
 
 char *TCID = "rename14";
 int TST_TOTAL = 1;
@@ -57,15 +58,18 @@ int TST_TOTAL = 1;
 
 int kidpid[2];
 int parent_pid;
+int kill_t1 = 0;
+int kill_t2 = 0;
 
 int term(void);
 int al(void);
-void dochild1(void);
-void dochild2(void);
+void* dochild1(void* param);
+void* dochild2(void* param);
 
 int main(int argc, char *argv[])
 {
 	int pid;
+	pthread_t tid1, tid2;
 	sigset_t set;
 	struct sigaction act, oact;
 
@@ -88,14 +92,16 @@ int main(int argc, char *argv[])
 	}
 	parent_pid = getpid();
 	tst_tmpdir();
-
+#if 0 /* Commenting the below code as fork is not supported in sgx-lkl */
 	pid = FORK_OR_VFORK();
 	if (pid < 0)
 		tst_brkm(TBROK, NULL, "fork() returned %d", pid);
 	if (pid == 0)
 		dochild1();
-
+#endif
+	pthread_create(&tid1, NULL, dochild1, NULL);
 	kidpid[0] = pid;
+#if 0
 	pid = FORK_OR_VFORK();
 	if (pid < 0) {
 		(void)kill(kidpid[0], SIGTERM);
@@ -104,21 +110,27 @@ int main(int argc, char *argv[])
 	}
 	if (pid == 0)
 		dochild2();
-
+#endif
+	pthread_create(&tid2, NULL, dochild2, NULL);
 	kidpid[1] = pid;
 
-	alarm(RUNTIME);
+	alarm(1);
 
 	/* Collect child processes. */
 	/* Wait for timeout */
-	pause();
+	//pause();
+	//kill_t1 = 1;
+	//kill_t2 = 1;
 
+	pthread_join(tid1, NULL);
+	pthread_join(tid2, NULL);
+#if 0
 	kill(kidpid[0], SIGTERM);
 	kill(kidpid[1], SIGTERM);
 
 	waitpid(kidpid[0], NULL, 0);
 	waitpid(kidpid[1], NULL, 0);
-
+#endif
 	unlink("./rename14");
 	unlink("./rename14xyz");
 	(local_flag == PASSED) ? tst_resm(TPASS, "Test Passed")
@@ -141,6 +153,7 @@ int term(void)
 
 int al(void)
 {
+	tst_resm(TINFO, "in al handler local_flag = %d",local_flag);
 	if (kidpid[0])
 		return (kill(kidpid[0], SIGTERM));
 	if (kidpid[1])
@@ -148,19 +161,42 @@ int al(void)
 	return 0;
 }
 
-void dochild1(void)
+void* dochild1(void* param)
 {
 	int fd;
 
-	for (;;) {
+	tst_resm(TINFO, "in child 1...local_flag = %d",local_flag);
+	for (;!kill_t1;) {
+		tst_resm(TINFO, "in child 1...local_flag before fd creat = %d",local_flag);
 		fd = creat("./rename14", 0666);
 		unlink("./rename14");
 		close(fd);
+		tst_resm(TINFO, "in child 1...local_flag after close = %d",local_flag);
+		//kill_t1 = 1;
 	}
+	tst_resm(TINFO, "in child 1...local_flag before exit = %d",local_flag);
+	pthread_exit(NULL);
 }
 
-void dochild2(void)
+void* dochild2(void* param)
 {
-	for (;;)
-		rename("./rename14", "./rename14xyz");
+	tst_resm(TINFO, "in child 2...local_flag = %d",local_flag);
+	for (;!kill_t2;) {
+		tst_resm(TINFO, "in child 2...local_flag before rename  = %d",local_flag);
+		local_flag = rename("./rename14", "./rename14xyz");
+		tst_resm(TINFO, "in child 2...local_flag after rename  = %d",local_flag);
+
+		if (local_flag == 0) {
+			local_flag = PASSED;
+			tst_resm(TINFO, "rename returned %d", local_flag);
+		} else {
+			tst_resm(TINFO, "rename failed ..returned %d, errno = %d", local_flag, errno);
+			local_flag = FAILED;
+		}
+
+		tst_resm(TINFO, "in child 2...local_flag end loop  = %d",local_flag);
+		//kill_t2 = 1;
+	}
+	tst_resm(TINFO, "in child 2...local_flag before exit  = %d",local_flag);
+	pthread_exit(NULL);
 }
