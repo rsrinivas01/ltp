@@ -67,6 +67,9 @@ int TST_TOTAL = 0;
 #define UTIME_NOW      ((1l << 30) - 1l)
 #define UTIME_OMIT     ((1l << 30) - 2l)
 
+int setup(int file_flags, mode_t file_mode, char *pathname);
+int reset_tsp ();
+
 static inline int
 utimensat_sc(int dirfd, const char *pathname,
 	     const struct timespec times[2], int flags)
@@ -105,7 +108,18 @@ static void usageError(char *progName)
 	exit(EXIT_bad_usage);
 }
 
-int main(int argc, char *argv[])
+/* Renamed existing main to new_main for processing arguments.
+ * This is done to avoid making huge amount of changes to
+ * existing main. Instead the old main() is renamed to new_main()
+ * and minimal changes are done such as returning error or success
+ * to the caller instead of exiting when there is a failure or success.
+ * This function is called with argc and argv according to the test
+ * scenario to be tested. So this function will just treat that argc
+ * and argv are received from command line and try to parse using
+ * getopt() and test the utimensat() success and error conditions.
+ */
+
+int new_main(int argc, char *argv[])
 {
 	int flags, dirfd, opt, oflag;
 	struct timespec ts[2];
@@ -115,7 +129,7 @@ int main(int argc, char *argv[])
 	int verbose;
 
 	/* Command-line argument parsing */
-
+	
 	flags = 0;
 	verbose = 1;
 	dirfd = AT_FDCWD;
@@ -141,7 +155,11 @@ int main(int argc, char *argv[])
 		case 'w':
 			oflag = O_RDWR | O_APPEND;
 			break;
-
+		/* Added new case to print the invalid option character
+		 * received in argv */
+		case '?':
+			printf  ("option character `\\x%x'.\n", optopt);
+			break;
 		default:
 			usageError(argv[0]);
 		}
@@ -152,8 +170,16 @@ int main(int argc, char *argv[])
 
 	if (dirfdPath != NULL) {
 		dirfd = open(dirfdPath, oflag);
+		/* Ignoring open error to test EBADF scenario.
+		 * open() is invoked during the test setup via
+		 * the setup() function which is newly added.
+		 * So the above open() is really not used.
+		 * It is now used to pass invalid dirfd i.e
+		 * EBADF test case. Non existing file is passed along
+		 * with -d option so that open() will return -1
+		 */
 		if (dirfd == -1)
-			errExit("open");
+			printf("open error\n");
 
 		if (verbose) {
 			printf("Opened dirfd %d", oflag);
@@ -234,28 +260,59 @@ int main(int argc, char *argv[])
 	}
 
 	/* Make the call and see what happened */
+	/* In earlier implementation failure of utimensat_sc() is
+	 * treated as a failure and the test is existed with exit().
+	 * This doesn't give a chance to test the error case sceanrios
+	 * for the utimensat(). Below changes are made to return with
+	 * error number in case of utimensat() failure. The caller of this
+	 * function i.e main() will validate and check if the error is
+	 * expected or not based on the test case and pass or fail the
+	 * test accordingly.
+	 */
 
 	if (utimensat_sc(dirfd, pathname, tsp, flags) == -1) {
 		if (errno == EPERM) {
 			if (verbose)
-				printf("utimensat() failed with EPERM\n");
+				printf("utimensat() returned with EPERM\n");
 			else
 				printf("EPERM\n");
-			exit(EXIT_FAILURE);
+			return EPERM;
 
 		} else if (errno == EACCES) {
 			if (verbose)
-				printf("utimensat() failed with EACCES\n");
+				printf("utimensat() returned with EACCES\n");
 			else
 				printf("EACCES\n");
-			exit(EXIT_FAILURE);
+			return EACCES;
 
 		} else if (errno == EINVAL) {
 			if (verbose)
-				printf("utimensat() failed with EINVAL\n");
+				printf("utimensat() returned with EINVAL\n");
 			else
 				printf("EINVAL\n");
-			exit(EXIT_FAILURE);
+			return EINVAL;
+
+		} else if (errno == EBADF) {
+			if (verbose)
+				printf("utimensat() returned with EBADF\n");
+			else
+				printf("EBADF\n");
+			optind = 1;
+			return EBADF;
+
+		} else if (errno == ENAMETOOLONG) {
+			if (verbose)
+				printf("utimensat() returned with ENAMETOOLONG\n");
+			else
+				printf("ENAMETOOLONG\n");
+			return ENAMETOOLONG;
+
+		} else if (errno == ENOENT) {
+			if (verbose)
+				printf("utimensat() returned with ENOENT\n");
+			else
+				printf("ENOENT\n");
+			return ENOENT;
 
 		} else {	/* Unexpected failure case from utimensat() */
 			errExit("utimensat");
@@ -278,5 +335,245 @@ int main(int argc, char *argv[])
 		       (long)sb.st_mtime);
 	}
 
-	exit(EXIT_SUCCESS);
+	return 0;
+}
+
+/* Below data structures are different argv[] strcutures passed in
+ * as parameters to the new_main() function from main() function.
+ * The argv[] will be simialr to argv[] of a command line invocation
+ * of the application.
+ */
+
+/* Test 1 - Time value of NULL */
+/* Command line: ./utimensat01 ./utimesat01_testfile */
+char *argv_ptr0[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "./utimesat01_testfile",
+    NULL
+};
+
+/* Test 2 - Time value of tv_nsec = UTIME_NOW */
+/* Command line: ./utimensat01 ./utimesat01_testfile 0 n 0 n */
+char *argv_ptr1[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "./utimesat01_testfile",
+    (char *) "0",
+    (char *) "n",
+    (char *) "0",
+    (char *) "n",
+    NULL
+};
+
+/* Test 3 - Time value of tv_nsec = UTIME_OMIT */
+/* Command line: ./utimensat01 ./utimesat01_testfile 0 o 0 o */
+char *argv_ptr2[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "./utimesat01_testfile",
+    (char *) "0",
+    (char *) "o",
+    (char *) "0",
+    (char *) "o",
+    NULL
+};
+
+/* Test 4 - Time value of tv_nsec = UTIME_OMIT and UTIME_NOW */
+/* Command line: ./utimensat01 ./utimesat01_testfile 0 n 0 o */
+char *argv_ptr3[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "./utimesat01_testfile",
+    (char *) "0",
+    (char *) "n",
+    (char *) "0",
+    (char *) "o",
+    NULL
+};
+
+/* Test 5 - Time value of tv_nsec = UTIME_NOW and UTIME_OMIT */
+/* Command line: ./utimensat01 ./utimesat01_testfile 0 o 0 n */
+char *argv_ptr4[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "./utimesat01_testfile",
+    (char *) "0",
+    (char *) "o",
+    (char *) "0",
+    (char *) "n",
+    NULL
+};
+
+/* Test 6 - Time values of 1, 1, 1, 1 for both tv_sec and tv_nsec */
+/* Command line: ./utimensat01 ./utimesat01_testfile 1 1 1 1 */
+char *argv_ptr5[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "./utimesat01_testfile",
+    (char *) "1",
+    (char *) "1",
+    (char *) "1",
+    (char *) "1",
+    NULL
+};
+
+/* Test 7 - EBADF: Invalid dirfd (Invalid file specified for -d option) */
+/* Command line: ./utimensat01 -d ./dirfd_file ./utimesat01_testfile */
+char *argv_ptr6[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "-d",
+    (char *) "./dirfd_file",
+    (char *) "./utimesat01_testfile",
+    NULL
+};
+
+/* Test 8 - EINVAL: Invalid value in one or both of the tv_nsec fields. */
+/* Command line: ./utimensat01 ./utimesat01_testfile 1 -1 1 -1 */
+char *argv_ptr7[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "./utimesat01_testfile",
+    (char *) "1",
+    (char *) "-1",
+    (char *) "1",
+    (char *) "-1",
+    NULL
+};
+
+/* Test 9 - ENAMETOOLONG: pathname is too long (Long file name as argument */
+/* Command line: ./utimensat01 ./abcdef...... */
+char *argv_ptr8[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "./abcdefghijklmnopqrstuvwxaaaaaaaaaaaaaaaaaaaaaaaaaa \
+                aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+                aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+                aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    NULL
+};
+
+/* Test 10 - ENOENT (utimensat()) A component of pathname does not refer
+*  to an existing directory or file, or pathname is an empty string.
+*/
+/* Command line: ./utimensat01  (An empty string as file name) */
+char *argv_ptr9[] = {
+    (char *) "utimensat01",	/* Executable */
+    (char *) "",
+    NULL
+};
+
+/* Test arguments for each of test case 1 to 10 */
+char **argv_ptr[] = {argv_ptr0, argv_ptr1, argv_ptr2, argv_ptr3, argv_ptr4, 
+	             argv_ptr5, argv_ptr6, argv_ptr7, argv_ptr8, argv_ptr9};
+
+/* Test arguments size for each of test case 1 to 10 */
+int  argv_size[]  = {2, 6, 6, 6, 6, 6, 4, 6, 2, 2};
+
+
+/* Expected test result for each of test case 1 to 10.
+ * 0 - Expecting result is success i.e. 0 from new_main() function.
+ * Other error numbers - Expected corresponding errorno.
+ */
+int  expected_result[] = {0, 0, 0, 0, 0, 0, EBADF, EINVAL, ENAMETOOLONG, ENOENT}; 
+
+/* Newly added main() function to pass on relevant argc and argv to
+ * new_main() based on the test case and check the pass or failure
+ * of utimensat(). This is just a stub() function to use the above
+ * argc and argv arrays and invoke new_main() for performing the test.
+ *
+ * It does the following.
+ * 	- Invoke setup() function to create a test file.
+ * 	- For each test case,
+ * 		1. reset the time stamps of test file using reset_tsp() function.
+ * 		2. invoke new_main() with proper argc and argv as per test case.
+ * 		3. validate the return value of new_main() to check if the test is
+ * 		   passed or failed.
+ */
+
+int main(int argc, char *argv[])
+{
+	int i;
+	int ret = -1;
+
+	ret = setup(O_CREAT | O_RDONLY, S_IRUSR, "./utimesat01_testfile");
+	if (ret < 0)
+	{
+		tst_brkm(TCONF, NULL, "Failed to create test file");
+	}
+
+	/* Tests 1 to 10 */
+	for (i = 0; i < 10; i++)
+	{
+		ret = reset_tsp ();
+
+		if (ret < 0)
+		{
+			tst_brkm(TCONF, NULL, "File time stamp reset failed for Test %d", i+1);
+			continue;
+		}
+
+		ret = new_main (argv_size[i], argv_ptr[i]);	
+	
+		tst_resm(TINFO, "Test-%d expected = %d received = %d ",	i+1, expected_result[i], ret);
+
+		if (ret == expected_result[i])
+		{
+			tst_resm(TPASS, "Test-%d passed ", i+1);
+		}
+		else 
+		{
+			tst_resm(TFAIL, "Test-%d failed ", i+1);
+		}
+	}
+}
+
+/* Common setup for test case.
+ * Creates the test file with required permissions.
+ */
+
+int setup(int file_flags, mode_t file_mode, char *pathname)
+{
+	int fd = open(pathname, file_flags, file_mode);
+
+	if (fd == -1)
+	{
+		tst_brkm(TCONF, NULL, "File creation failed, errnor = %d\n", errno);
+		return -1;
+	}
+
+	tst_resm (TINFO, "file flags is 0x%X",  file_flags);
+	tst_resm (TINFO, "file mode is 0x%X", file_mode);
+
+	return 0;
+
+}
+
+/* Reset timestamps for the test file.
+ * Using the utimensat() itself this function will try to
+ * reset the time stamps of test file (modifications and access times) i.e
+ * to Jan 1, 1970 00:00:00
+ */
+int reset_tsp ()
+{
+	struct timespec ts[2];
+	struct stat sb;
+	char *pname = "./utimesat01_testfile";
+
+	/* Reset times to 0 */        
+	ts[0].tv_sec  = 0;
+	ts[0].tv_nsec = 0;
+	ts[1].tv_sec  = 0;
+	ts[1].tv_nsec = 0;
+	
+	if (utimensat_sc(AT_FDCWD, pname, ts, AT_SYMLINK_NOFOLLOW) == -1)
+	{
+		tst_resm (TINFO, "utimensat failed, errno = %d \n", errno);
+		return -1;
+	}
+	else
+	{
+		if (stat(pname, &sb) == -1)
+			return -1;
+		else
+		{
+			if (sb.st_atime == 0 && sb.st_mtime ==0)
+			{
+				return 0;
+			}
+		}
+	}
+	return -1;
 }
